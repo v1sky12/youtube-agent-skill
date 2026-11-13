@@ -1,46 +1,41 @@
 name: Publish GTA VI Music Edits V3
 on:
   push:
-    branches: [gta6-v3-staging]
-    paths: ["gta6-release-chunks/**"]
+    branches:
+      - gta6-music-edits-v3-20261113
+    paths:
+      - "gta6-v3/chunks/**"
+      - ".github/workflows/gta6-v3-release.yml"
   workflow_dispatch:
+
 permissions:
   contents: write
+
 jobs:
   publish:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - name: Restore and verify original video files
+      - name: Check out uploaded fragments
+        uses: actions/checkout@v4
+      - name: Reassemble and verify the video archive
+        shell: bash
         run: |
-          python3 - <<'PY'
-          import base64,hashlib,pathlib,zipfile
-          root=pathlib.Path("gta6-release-chunks")
-          out=pathlib.Path("dist"); out.mkdir(exist_ok=True)
-          expected={
-            "01_ACTION_MIAMI_CHASE.mp4":"0046991fda73d90e20474f1246661cfb580c9c9742a8a4acb27b66fe653c0588",
-            "02_NIGHT_DRIVE_SYNTHFUNK.mp4":"814aa50771142a8037529f0e5ec536195ecb55473026865983d44bae6d27edc5",
-            "03_VICE_CITY_SUNSET.mp4":"3565cb970be93a5ec9dd2a726defbf1d061143ec078c20a8b99486a49a243e9b"
-          }
-          for name,want in expected.items():
-              pieces=sorted((root/name.replace(".mp4","")).glob("*.b64"))
-              if not pieces: raise RuntimeError("Missing pieces: "+name)
-              payload="".join(p.read_text(encoding="ascii").strip() for p in pieces)
-              data=base64.b64decode(payload,validate=True)
-              digest=hashlib.sha256(data).hexdigest()
-              if digest != want: raise RuntimeError("Checksum mismatch: "+name)
-              (out/name).write_bytes(data)
-              print("Verified",name,len(data))
-          with zipfile.ZipFile(out/"GTA6_MUSIC_EDITS_V3_ALL.zip","w",compression=zipfile.ZIP_STORED) as z:
-              for p in sorted(out.glob("*.mp4")): z.write(p,p.name)
-          PY
-      - name: Publish files to GitHub Release
+          set -euo pipefail
+          mkdir -p dist
+          cat gta6-v3/chunks/part-*.bin > dist/GTA6_MUSIC_EDITS_V3_720p.zip
+          echo "2c754a92596a132fe6c67ed3c7da7407602cea42224f9b8597e73c15b8d2b605  dist/GTA6_MUSIC_EDITS_V3_720p.zip" | sha256sum -c -
+          unzip -tq dist/GTA6_MUSIC_EDITS_V3_720p.zip
+          unzip -oq dist/GTA6_MUSIC_EDITS_V3_720p.zip -d dist
+          test "$(find dist -maxdepth 1 -name '*.mp4' | wc -l)" -eq 3
+      - name: Create a downloadable GitHub release
+        shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          TAG=gta6-music-edits-v3
-          if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release upload "$TAG" dist/*.mp4 dist/*.zip --clobber
+          set -euo pipefail
+          tag="gta6-music-edits-v3-720p-20261113"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release upload "$tag" dist/*.mp4 dist/*.zip --clobber
           else
-            gh release create "$TAG" dist/*.mp4 dist/*.zip --target "${GITHUB_SHA}" --title "GTA VI Music Edits V3" --notes "Three original 30-second GTA VI music montages in Full HD, plus a ZIP with all three. Verified with SHA-256 checksums."
+            gh release create "$tag" dist/*.mp4 dist/*.zip --target "$GITHUB_SHA" --title "GTA VI Music Edits V3 — 3 x 30s" --notes "Three 30-second GTA VI fan video montages with music. Includes action, night drive, and sunset/open world. 720p H.264/AAC version for GitHub sharing; original 1080p exports are kept separately."
           fi
